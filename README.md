@@ -1,42 +1,120 @@
-# Eval Concepts
+# Email Agent - Omni-Input
+
+An intelligent email triage and response agent built with LangGraph, FastAPI, and OpenAI. This agent automatically classifies incoming emails, checks calendar availability, schedules meetings, and drafts professional responses.
+
+## Architecture
+
+The project is split into two main components:
+
+- **Server** (`server/`): FastAPI server that hosts the LangGraph email agent
+- **Client** (`client/`): CLI client for interacting with the server
+    - Additional clients can be added to illustrate multi client usage
 
 
-## Introduction
-In this notebook, we'll set up 2 applications
-1. ELI5: A simple app to demonstrate the basics of tracing and evaluation, to illustrate AI development workflows
-2. MultiAgent: A more complex agent to demonstrate advanced evaluation concepts
+## Installation
+
+### Prerequisites
+
+- Python 3.13+
+- Virtual environment (recommended)
+
+### Setup
+
+1. **Clone the repository** (if applicable)
+
+2. **Create and activate a virtual environment**:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. **Install dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment variables**:
+   
+   Create a `.env` file in the project root (see `.env.example` for reference):
+   ```bash
+   OPENAI_API_KEY=your_openai_api_key_here
+   # Add other required environment variables
+   ```
 
 
-## Pre-work
+## Usage
 
-### Create .env file
+### Starting the Server
 
-Follow the example in .env.example to fill in the necessary information to run the application.
+Start the FastAPI server:
 
-### Install dependencies
-
-Create a virtual enviornment
-```
-python3 -m venv .venv
+```bash
 source .venv/bin/activate
+uvicorn server.server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Install dependencies
+The server will be available at `http://localhost:8000`
+
+### Using the CLI Client
+
+The CLI client allows you to send emails to the agent for processing.
+
+#### Basic Usage
+
+```bash
+python -m client.cli \
+  --from "alice@example.com" \
+  --to "bob@example.com" \
+  --subject "Meeting Request" \
+  "Can we schedule a meeting tomorrow?"
 ```
-pip install -r requirements.txt
+
+#### Continue Existing Thread
+
+```bash
+python -m client.cli \
+  --from "alice@example.com" \
+  --to "bob@example.com" \
+  --subject "Re: Meeting Request" \
+  --thread-id "thread-123" \
+  "Thanks for the help!"
 ```
 
-Then you're ready to run the notebooks!
+#### CLI Options
 
-### The Notebooks
+- `--from` (required): Sender email address
+- `--to` (required): Recipient email address  
+- `--subject` (required): Email subject line
+- `--thread-id` (optional): Thread ID to continue conversation (default: creates new thread)
+- `--server-url` (optional): Server URL (default: `http://localhost:8000`)
+- `--json` (optional): Output raw JSON response
 
-#### Basics
-The simple agent is available in the ```basics``` folder, and the exercise can be run through the eli5 notebook.
-ELI5 is a simple RAG pipeline designed to answer questions in a way a 5-year-old could understand.
+### API Endpoints
 
-#### Advanced
-The complex agent is available in the ```advanced``` folder, and eval exercises can be run through the notebooks 
-in the folder. MultiAgent is a customer service assistant for a digital music store, and has tools to 
-query songs and invoices. 
+#### POST `/invoke`
 
-The multiagent is a supervisor architecture defined in ```multiagent.py```, and its tools live in ```multiagent_tools.py```
+Invoke the email agent with an email input.
+
+**Request Body**:
+```json
+{
+  "email_input": {
+    "author": "sender@example.com",
+    "to": "recipient@example.com",
+    "subject": "Email Subject",
+    "email_thread": "Email content here"
+  },
+  "thread_id": "optional-thread-id",
+  "source": "CLI"
+}
+```
+
+**Response**:
+```json
+{
+  "result": {
+    "classification_decision": "respond",
+    "messages": [...]
+  }
+}
+```
