@@ -17,3 +17,6 @@ slack_sdk
 tavily-python
 wikipedia
 mcp
+fastapi
+uvicorn
+requests

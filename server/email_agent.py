@@ -1,21 +1,22 @@
-import asyncio
-from contextlib import asynccontextmanager
 import sys
 from pathlib import Path
-
-from typing import Literal, TypedDict
+from dotenv import load_dotenv
+from contextlib import asynccontextmanager
+from typing import Literal, TypedDict, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
 
 from langchain_openai import ChatOpenAI
-
-from utils import get_triage_instructions, get_action_instructions, parse_email, format_email_markdown
-
+from dataclasses import dataclass
 from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.runtime import Runtime
 from langgraph.types import Command
-from dotenv import load_dotenv
 
-load_dotenv("../.env")
+from .utils import get_triage_instructions, get_action_instructions, parse_email, format_email_markdown
+
+# Load .env from project root (one level up from server/)
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -48,14 +49,32 @@ class State(MessagesState):
     email_input: dict
     classification_decision: Literal["ignore", "respond", "notify"]
 
+# Runtime context schema for configurable fields
+@dataclass
+class ContextSchema:
+    source: Optional[str] = None
+
 # ----- Node and edge function templates (pass context in setup) -----
 def create_llm_call(llm_with_tools):
-    def llm_call(state: State):
+    def llm_call(state: State, runtime: Runtime[ContextSchema]):
         agent_system_prompt = get_action_instructions()
+        
+        # Get source from runtime context
+        source = runtime.context.source
+        
+        # Add source-specific instruction to prompt
+        source_instruction = ""
+        if source == "slack":
+            source_instruction = "\n\nNote: This request was received via Slack. Keep responses concise and suitable for Slack messaging."
+        elif source == "CLI":
+            source_instruction = "\n\nNote: This request was received via CLI. Provide detailed and well-formatted responses suitable for command-line interface."
+        
+        full_prompt = agent_system_prompt.format(today=datetime.now().strftime("%Y-%m-%d")) + source_instruction
+        
         return {
             "messages": [
                 llm_with_tools.invoke([
-                    {"role": "system", "content": agent_system_prompt.format(today=datetime.now().strftime("%Y-%m-%d"))}
+                    {"role": "system", "content": full_prompt}
                 ] + state["messages"])
             ]
         }
@@ -147,7 +166,7 @@ async def setup_email_assistant():
             llm_router = llm.with_structured_output(RouterSchema)
 
             # Build response agent workflow
-            agent_builder = StateGraph(State)
+            agent_builder = StateGraph(State, context_schema=ContextSchema)
             agent_builder.add_node("agent", create_llm_call(llm_with_tools))
             agent_builder.add_node("tools", create_tool_node(tools_by_name))
             agent_builder.add_edge(START, "agent")
@@ -168,7 +187,7 @@ async def setup_email_assistant():
             # Build overall workflow with triage router
             triage_router = create_triage_router(llm_router)
             overall_workflow = (
-                StateGraph(State, input=StateInput)
+                StateGraph(State, input=StateInput, context_schema=ContextSchema)
                 .add_node(triage_router)
                 .add_node("response_agent", agent)
                 .add_edge(START, "triage_router")
@@ -196,7 +215,7 @@ async def studio_email_assistant():
             llm_router = llm.with_structured_output(RouterSchema)
 
             # Build response agent workflow
-            agent_builder = StateGraph(State)
+            agent_builder = StateGraph(State, context_schema=ContextSchema)
             agent_builder.add_node("agent", create_llm_call(llm_with_tools))
             agent_builder.add_node("tools", create_tool_node(tools_by_name))
             agent_builder.add_edge(START, "agent")
@@ -217,7 +236,7 @@ async def studio_email_assistant():
             # Build overall workflow with triage router
             triage_router = create_triage_router(llm_router)
             overall_workflow = (
-                StateGraph(State, input=StateInput)
+                StateGraph(State, input=StateInput, context_schema=ContextSchema)
                 .add_node(triage_router)
                 .add_node("response_agent", agent)
                 .add_edge(START, "triage_router")

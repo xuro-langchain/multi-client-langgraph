@@ -1,5 +1,4 @@
 import os
-import requests
 from typing import Dict
 from dotenv import load_dotenv
 from langsmith import Client, traceable
